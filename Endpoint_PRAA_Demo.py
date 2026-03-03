@@ -19,7 +19,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 # ----------------------------
 # Config
 # ----------------------------
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/iam_demo")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./iam_demo")
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")  # use a real secret manager in prod
 JWT_ALG = "HS256"
 ACCESS_TOKEN_TTL_SECONDS = 15 * 60
@@ -39,7 +39,7 @@ ph = PasswordHasher()
 # DB setup
 # ----------------------------
 Base = declarative_base()
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
