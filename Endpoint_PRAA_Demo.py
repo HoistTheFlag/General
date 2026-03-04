@@ -6,7 +6,7 @@ from typing import Optional, List, Callable
 
 import pyotp
 from argon2 import PasswordHasher
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Form
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import BaseModel, EmailStr
@@ -202,32 +202,31 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/login", response_model=TokenOut)
-def login(payload: LoginIn, db: Session = Depends(get_db)):
-   user = db.query(User).filter(User.email == payload.email).first()
-   if not user:
-       raise HTTPException(401, "Invalid credentials")
+def login(
+    username: str = Form(...),          # Swagger uses "username"
+    password: str = Form(...),
+    totp_code: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    # Treat username as email
+    user = db.query(User).filter(User.email == username).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+    try:
+        ph.verify(user.password_hash, password)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-   # Verify password
-   try:
-       ph.verify(user.password_hash, payload.password)
-   except Exception:
-       raise HTTPException(401, "Invalid credentials")
+    if user.mfa_enabled:
+        if not totp_code:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA required: provide totp_code")
+        totp = pyotp.TOTP(user.mfa_secret)
+        if not totp.verify(totp_code, valid_window=1):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA code")
 
-
-   # If MFA enabled, require a TOTP code
-   if user.mfa_enabled:
-       if not payload.totp_code:
-           raise HTTPException(401, "MFA required: provide totp_code")
-
-
-       totp = pyotp.TOTP(user.mfa_secret)
-       if not totp.verify(payload.totp_code, valid_window=1):
-           raise HTTPException(401, "Invalid MFA code")
-
-
-   token = create_access_token(sub=user.email, role=user.role)
-   return TokenOut(access_token=token)
+    token = create_access_token(sub=user.email, role=user.role)
+    return TokenOut(access_token=token)
 
 
 
